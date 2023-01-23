@@ -902,9 +902,9 @@ void Application::calibrate(void)
     calib.cam_width = imageSize.width;
     calib.cam_height = imageSize.height;
     // Source intrisics from camera calibration.
+    int cam_flags = 0;
     if (intrinsics_source == "Calibration") {
         std::vector<cv::Mat> cam_rvecs, cam_tvecs;
-        int cam_flags = 0;
         calib.cam_error = cv::calibrateCamera(world_corners_active, camera_corners_active, imageSize, calib.cam_K, calib.cam_kc, cam_rvecs, cam_tvecs,
                                                 placeholder, placeholder, calib.cam_per_view_errors, cam_flags, cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
     // Source intrisics from external parameters (e.g. manufacturer supplied).
@@ -1116,15 +1116,14 @@ void Application::calibrate(void)
         processing_message(QString("[ERROR] Saving %1 failed").arg(filename));
     }
 
-    //save to JSON format for use in frontend / lux
-    filename = path + "/calibration_result.json";
-    if (calib.save_calibration(filename))
+    // save to JSON format for use in frontend / lux
+    if (calib.save_calibration_json(path, cam_flags, proj_flags, stereo_flags, &config))
     {
-        processing_message(QString("Calibration saved [JSON]: %1").arg(filename));
+        processing_message(QString("Calibration saved [JSON]: %1").arg(path));
     }
     else
     {
-        processing_message(QString("[ERROR] Saving %1 failed").arg(filename));
+        processing_message(QString("[ERROR] Saving %1 failed").arg(path));
     }
 
 
