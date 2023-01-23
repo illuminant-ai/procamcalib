@@ -30,6 +30,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <iostream>
 #include <QString>
+#include <QSettings>
 #include <vector>
 #include <opencv2/core.hpp>
 
@@ -51,8 +52,8 @@ public:
     bool load_calibration_yml(QString const& filename);
     bool save_calibration_yml(QString const& filename);
 
-    bool save_calibration_json(QString const& filename);
     bool save_calibration_matlab(QString const& filename);
+    bool save_calibration_json(QString const& path, int cam_flags, int proj_flags, int stereo_flags, QSettings* config);
 
     void display(std::ostream & stream = std::cout) const;
 

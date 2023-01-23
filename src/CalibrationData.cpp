@@ -27,8 +27,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "CalibrationData.hpp"
 
+#include "Application.hpp"
+
 #include <QFileInfo>
 
+#include <ctime>
+#include <regex>
 #include <iostream>
 #include <opencv2/calib3d.hpp>
 
@@ -38,6 +42,7 @@ CalibrationData::CalibrationData() :
     R(), T(), E(), F(),
     // H1(), H2(),
     cam_error(0.0), proj_error(0.0), stereo_error(0.0),
+    cam_height(0.0), cam_width(0.0), proj_height(0.0), proj_width(0.0),
     filename()
 {
 }
@@ -96,7 +101,6 @@ bool CalibrationData::save_calibration(QString const& filename)
 
     if (type=="yml") {return save_calibration_yml(filename);}
     if (type=="m"  ) {return save_calibration_matlab(filename);}
-    if (type=="json") { return save_calibration_json(filename);}
 
     return false;
 }
@@ -154,109 +158,292 @@ bool CalibrationData::save_calibration_yml(QString const& filename)
     return true;
 }
 
-bool CalibrationData::save_calibration_json(QString const& filename)
+static cv::Mat convert_transform_from_opencv_to_unity(cv::Mat transform)
 {
+    cv::Mat out = transform.clone();
+    out.at<double>(0, 1) = -transform.at<double>(0, 1);
+    out.at<double>(1, 0) = -transform.at<double>(1, 0);
+    out.at<double>(1, 2) = -transform.at<double>(1, 2);
+    out.at<double>(1, 3) = -transform.at<double>(1, 3);
+    out.at<double>(2, 1) = -transform.at<double>(2, 1);
+    out.at<double>(3, 0) = -transform.at<double>(3, 0);
+    out.at<double>(3, 2) = -transform.at<double>(3, 2);
+    return out;
+}
+
+static cv::Mat convert_transform_from_unity_to_scene(cv::Mat transform)
+{
+    cv::Mat out = transform.clone();
+    cv::Mat XZInv = cv::Mat::eye(4, 4, CV_64F);
+    XZInv.at<double>(0, 0) = XZInv.at<double>(2, 2) = -1;
+    out = XZInv * transform;
+    return out;
+}
+
+static cv::Mat rot2euler_unity(cv::Mat rot)
+{
+    // In Unity rotations are performed around the Z axis, the X axis, and the Y axis, in that order.
+    double thetaX = 0.0;
+    double thetaY = 0.0;
+    double thetaZ = 0.0;
+    cv::Mat euler = cv::Mat(3, 1, CV_64F);
+
+    double r00 = rot.at<double>(0, 0);
+    double r01 = rot.at<double>(0, 1);
+    double r02 = rot.at<double>(0, 2);
+    double r10 = rot.at<double>(1, 0);
+    double r11 = rot.at<double>(1, 1);
+    double r12 = rot.at<double>(1, 2);
+    double r20 = rot.at<double>(2, 0);
+    double r21 = rot.at<double>(2, 1);
+    double r22 = rot.at<double>(2, 2);
+
+    // Ry * Rx * Rz * transform order - note that Rz is the first rotation to left of the transform.
+    if (r12 < 1)
+    {
+        if (r12 > -1)
+        {
+            thetaX = asin(-r12);
+            thetaY = atan2(r02, r22);
+            thetaZ = atan2(r10, r11);
+        }
+        else  // r12 = -1
+        {
+            // not a unique solution: thetaZ - thetaY = atan2(-r01, r00)
+            thetaX = M_PI / 2;
+            thetaY = -atan2(-r01, r00);
+            thetaZ = 0;
+        }
+    }
+    else // r12 = 1
+    {
+        // Not a unique solution : thetaZ + thetaY = atan2 (-r01, r00)
+        thetaX = -M_PI / 2;
+        thetaY = atan2(-r01, r00);
+        thetaZ = 0;
+    }
+
+    // return as degrees
+    euler.at<double>(0, 0) = thetaX * (180 / M_PI);
+    euler.at<double>(1, 0) = thetaY * (180 / M_PI);
+    euler.at<double>(2, 0) = thetaZ * (180 / M_PI);
+
+    return euler;
+}
+
+
+bool CalibrationData::save_calibration_json(QString const& path, int cam_flags, int proj_flags, int stereo_flags, QSettings* config)
+{
+    // get current timestamp to save to file
+    time_t now;
+    time(&now);
+    char timestamp_str[sizeof "YYYY-MM-DDTHH:MM:SSZ"];
+    strftime(timestamp_str, sizeof timestamp_str, "%FT%TZ", gmtime(&now));
+
+    // save capture camera calibration
+    QString filename = path + "/capture_camera_calibration.json";
     FILE* fp = fopen(qPrintable(filename), "w");
     if (!fp)
     {
         return false;
     }
-
-    cv::Mat rvec;
-    cv::Rodrigues(R, rvec);
     fprintf(fp,
-            "{\n"
-                "\t\"cam_int\": {\n"
-                    "\t\t\"type_id\": \"opencv-matrix\",\n"
-                    "\t\t\"rows\" : 3,\n"
-                    "\t\t\"cols\" : 3,\n"
-                    "\t\t\"dt\" : \"d\",\n"
-                    "\t\t\"data\" : [%lf, %lf, %lf, %lf, %lf, %lf, %lf, %lf, %lf]\n"
-                "\t},\n"
-                "\t\"cam_dist\": {\n"
-                    "\t\t\"type_id\": \"opencv-matrix\",\n"
-                    "\t\t\"rows\" : 1,\n"
-                    "\t\t\"cols\" : 5,\n"
-                    "\t\t\"dt\" : \"d\",\n"
-                    "\t\t\"data\" : [%lf, %lf, %lf, %lf, %lf]\n"
-                "\t},\n"
-                "\t\"proj_int\": {\n"
-                    "\t\t\"type_id\": \"opencv-matrix\",\n"
-                    "\t\t\"rows\" : 3,\n"
-                    "\t\t\"cols\" : 3,\n"
-                    "\t\t\"dt\" : \"d\",\n"
-                    "\t\t\"data\" : [%lf, %lf, %lf, %lf, %lf, %lf, %lf, %lf, %lf]\n"
-                "\t},\n"
-                "\t\"proj_dist\": {\n"
-                    "\t\t\"type_id\": \"opencv-matrix\",\n"
-                    "\t\t\"rows\" : 1,\n"
-                    "\t\t\"cols\" : 5,\n"
-                    "\t\t\"dt\" : \"d\",\n"
-                    "\t\t\"data\" : [%lf, %lf, %lf, %lf, %lf]\n"
-                "\t},\n"
-                "\t\"rotation\": {\n"
-                    "\t\t\"type_id\": \"opencv-matrix\",\n"
-                    "\t\t\"rows\" : 3,\n"
-                    "\t\t\"cols\" : 3,\n"
-                    "\t\t\"dt\" : \"d\",\n"
-                    "\t\t\"data\" : [%lf, %lf, %lf, %lf, %lf, %lf, %lf, %lf, %lf]\n"
-                "\t},\n"
-                "\t\"translation\": {\n"
-                    "\t\t\"type_id\": \"opencv-matrix\",\n"
-                    "\t\t\"rows\" : 3,\n"
-                    "\t\t\"cols\" : 1,\n"
-                    "\t\t\"dt\" : \"d\",\n"
-                    "\t\t\"data\" : [%lf, %lf, %lf]\n"
-                "\t},\n"
-                "\t\"cam_shape\": {\n"
-                    "\t\t\"type_id\": \"opencv-matrix\",\n"
-                    "\t\t\"rows\" : 2,\n"
-                    "\t\t\"cols\" : 1,\n"
-                    "\t\t\"dt\" : \"d\",\n"
-                    "\t\t\"data\" : [%lf, %lf]\n"
-                "\t},\n"
-                "\t\"proj_shape\": {\n"
-                    "\t\t\"type_id\": \"opencv-matrix\",\n"
-                    "\t\t\"rows\" : 2,\n"
-                    "\t\t\"cols\" : 1,\n"
-                    "\t\t\"dt\" : \"d\",\n"
-                    "\t\t\"data\" : [%lf, %lf]\n"
-                "\t},\n"
-                "\t\"cam_error\": {\n"
-                    "\t\t\"type_id\": \"opencv-matrix\",\n"
-                    "\t\t\"rows\" : 1,\n"
-                    "\t\t\"cols\" : 1,\n"
-                    "\t\t\"dt\" : \"d\",\n"
-                    "\t\t\"data\" : [%lf]\n"
-                "\t},\n"
-                "\t\"proj_error\": {\n"
-                    "\t\t\"type_id\": \"opencv-matrix\",\n"
-                    "\t\t\"rows\" : 1,\n"
-                    "\t\t\"cols\" : 1,\n"
-                    "\t\t\"dt\" : \"d\",\n"
-                    "\t\t\"data\" : [%lf]\n"
-                "\t},\n"
-                "\t\"stereo_error\": {\n"
-                    "\t\t\"type_id\": \"opencv-matrix\",\n"
-                    "\t\t\"rows\" : 1,\n"
-                    "\t\t\"cols\" : 1,\n"
-                    "\t\t\"dt\" : \"d\",\n"
-                    "\t\t\"data\" : [%lf]\n"
-                "\t}\n"
-            "}\n",
-        cam_K.at<double>(0, 0), cam_K.at<double>(0, 1), cam_K.at<double>(0, 2), cam_K.at<double>(1, 0), cam_K.at<double>(1, 1), cam_K.at<double>(1, 2), cam_K.at<double>(2, 0), cam_K.at<double>(2, 1), cam_K.at<double>(2, 2),
-        cam_kc.at<double>(0, 0), cam_kc.at<double>(0, 1), cam_kc.at<double>(0, 2), cam_kc.at<double>(0, 3), cam_kc.at<double>(0, 4),
-        proj_K.at<double>(0, 0), proj_K.at<double>(0, 1), proj_K.at<double>(0, 2), proj_K.at<double>(1, 0), proj_K.at<double>(1, 1), proj_K.at<double>(1, 2), proj_K.at<double>(2, 0), proj_K.at<double>(2, 1), proj_K.at<double>(2, 2),
-        proj_kc.at<double>(0, 0), proj_kc.at<double>(0, 1), proj_kc.at<double>(0, 2), proj_kc.at<double>(0, 3), proj_kc.at<double>(0, 4),
-        R.at<double>(0, 0), R.at<double>(0, 1), R.at<double>(0, 2), R.at<double>(1, 0), R.at<double>(1, 1), R.at<double>(1, 2), R.at<double>(2, 0), R.at<double>(2, 1), R.at<double>(2, 2),
-        // Translation is divided by 1000.0f in order to convert from mm to m. Assumes that the input unit for checkerboard size is in mm.
-        T.at<double>(0, 0) / 1000.0f, T.at<double>(1, 0) / 1000.0f, T.at<double>(2, 0) / 1000.0f,
-        cam_height, cam_width,
-        proj_height, proj_width,
-        cam_error, proj_error, stereo_error
+        "{\n"
+            "\t\"name\": \"%s\",\n"
+            "\t\"timestamp\": \"%s\",\n"
+            "\t\"width\": %lf,\n"
+            "\t\"height\": %lf,\n"
+            "\t\"fx\": %lf,\n"
+            "\t\"fy\": %lf,\n"
+            "\t\"cx\": %lf,\n"
+            "\t\"cy\": %lf,\n"
+            "\t\"k1\": %lf,\n"
+            "\t\"k2\": %lf,\n"
+            "\t\"p1\": %lf,\n"
+            "\t\"p2\": %lf,\n"
+            "\t\"k3\": %lf,\n"
+            "\t\"rx\": %lf,\n"
+            "\t\"ry\": %lf,\n"
+            "\t\"rz\": %lf,\n"
+            "\t\"tx\": %lf,\n"
+            "\t\"ty\": %lf,\n"
+            "\t\"tz\": %lf\n"
+        "}\n",
+        filename.toStdString().c_str(),
+        timestamp_str,
+        cam_width,
+        cam_height,
+        cam_K.at<double>(0, 0), 
+        cam_K.at<double>(1, 1),
+        cam_K.at<double>(0, 2),
+        cam_K.at<double>(1, 2),
+        cam_kc.at<double>(0, 0),
+        cam_kc.at<double>(0, 1),
+        cam_kc.at<double>(0, 2),
+        cam_kc.at<double>(0, 3),
+        cam_kc.at<double>(0, 4),
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
     );
     fclose(fp);
 
+    // process r and t components for unity.
+    // create extrinsic matrix
+    cv::Mat extrinsics = cv::Mat::eye(4, 4, CV_64F);
+    // assign rotation
+    R.copyTo(extrinsics(cv::Rect_<int>(0, 0, 3, 3)));
+    // assign translation
+    extrinsics.at<double>(0, 3) = T.at<double>(0, 0) / 1000.0f;
+    extrinsics.at<double>(1, 3) = T.at<double>(1, 0) / 1000.0f;
+    extrinsics.at<double>(2, 3) = T.at<double>(2, 0) / 1000.0f;
+    std::cout << "Extrinsics:" << std::endl;
+    std::cout << extrinsics << std::endl;
+    std::cout << std::endl;
+
+    // convert from extrinsic to projector pose
+    cv::Mat raw_pose = extrinsics.inv();
+    std::cout << "Raw Pose:" << std::endl;
+    std::cout << raw_pose << std::endl;
+    std::cout << std::endl;
+
+    // convert pose from opencv to unity
+    cv::Mat unity_pose = convert_transform_from_opencv_to_unity(raw_pose);
+    std::cout << "Unity Pose:" << std::endl;
+    std::cout << unity_pose << std::endl;
+    std::cout << std::endl;
+
+    // convert unity pose to obj mesh compatible system
+    cv::Mat scene_pose = convert_transform_from_unity_to_scene(unity_pose);
+    std::cout << "Mesh Compatible Pose:" << std::endl;
+    std::cout << scene_pose << std::endl;
+    std::cout << std::endl;
+
+    // extract rotation
+    cv::Mat rot = rot2euler_unity(scene_pose(cv::Rect_<int>(0, 0, 3, 3)));
+    std::cout << "Rotation" << std::endl;
+    std::cout << rot << std::endl;
+    std::cout << std::endl;
+
+    // save projector calibration
+    filename = path + "/projector_calibration.json";
+    fp = fopen(qPrintable(filename), "w");
+    if (!fp)
+    {
+        return false;
+    }
+    fprintf(fp,
+        "{\n"
+        "\t\"name\": \"%s\",\n"
+        "\t\"timestamp\": \"%s\",\n"
+        "\t\"width\": %lf,\n"
+        "\t\"height\": %lf,\n"
+        "\t\"fx\": %lf,\n"
+        "\t\"fy\": %lf,\n"
+        "\t\"cx\": %lf,\n"
+        "\t\"cy\": %lf,\n"
+        "\t\"k1\": %lf,\n"
+        "\t\"k2\": %lf,\n"
+        "\t\"p1\": %lf,\n"
+        "\t\"p2\": %lf,\n"
+        "\t\"k3\": %lf,\n"
+        "\t\"rx\": %lf,\n"
+        "\t\"ry\": %lf,\n"
+        "\t\"rz\": %lf,\n"
+        "\t\"tx\": %lf,\n"
+        "\t\"ty\": %lf,\n"
+        "\t\"tz\": %lf\n"
+        "}\n",
+        filename.toStdString().c_str(),
+        timestamp_str,
+        proj_width,
+        proj_height,
+        proj_K.at<double>(0, 0),
+        proj_K.at<double>(1, 1),
+        proj_K.at<double>(0, 2),
+        proj_K.at<double>(1, 2),
+        proj_kc.at<double>(0, 0),
+        proj_kc.at<double>(0, 1),
+        proj_kc.at<double>(0, 2),
+        proj_kc.at<double>(0, 3),
+        proj_kc.at<double>(0, 4),
+        rot.at<double>(0, 0),
+        rot.at<double>(1, 0),
+        rot.at<double>(2, 0),
+        scene_pose.at<double>(0, 3),
+        scene_pose.at<double>(1, 3),
+        scene_pose.at<double>(2, 3)
+    );
+    fclose(fp);
+
+    // format per-view errors for json printing
+    std::string cam_pve_str = "";
+    cam_pve_str << cam_per_view_errors;
+    cam_pve_str = std::regex_replace(cam_pve_str, std::regex("\\n"), " ");
+
+    std::string proj_pve_str = "";
+    proj_pve_str << proj_per_view_errors;
+    proj_pve_str = std::regex_replace(proj_pve_str, std::regex("\\n"), " ");
+
+    std::string stereo_pve_str = "";
+    stereo_pve_str << stereo_per_view_errors;
+    stereo_pve_str = std::regex_replace(stereo_pve_str, std::regex("\\n"), " ");
+
+    // save projector calibration report
+    filename = path + "/calibration_report.json";
+    fp = fopen(qPrintable(filename), "w");
+    if (!fp)
+    {
+        return false;
+    }
+    fprintf(fp,
+        "{\n"
+        "\t\"name\": \"%s\",\n"
+        "\t\"timestamp\": \"%s\",\n"
+        "\t\"capture_camera_rmse\": %lf,\n"
+        "\t\"projector_rmse\": %lf,\n"
+        "\t\"stereo_rmse\": %lf,\n"
+        "\t\"capture_camera_calibration_flags\": %d,\n"
+        "\t\"projector_calibration_flags\": %d,\n"
+        "\t\"stereo_calibration_flags\": %d,\n"
+        "\t\"checkerboard_corner_count_x\": %d,\n"
+        "\t\"checkerboard_corner_count_y\": %d,\n"
+        "\t\"checkerboard_corners_width\": %lf,\n"
+        "\t\"checkerboard_corners_height\": %lf,\n"
+        "\t\"decode_threshold\": %d,\n"
+        "\t\"decode_b\": %lf,\n"
+        "\t\"decode_m\": %d,\n"
+        "\t\"calibration_h_win\": %d,\n"
+        "\t\"intrinsics_source\": \"%s\",\n"
+        "\t\"capture_camera_per_view_error\": \"%s\",\n"
+        "\t\"projector_per_view_error\": \"%s\",\n"
+        "\t\"stereo_per_view_error\": \"%s\"\n"
+        "}\n",
+        filename.toStdString().c_str(),
+        timestamp_str,
+        cam_error,
+        proj_error,
+        stereo_error,
+        cam_flags,
+        proj_flags,
+        stereo_flags,
+        config->value("main/corner_count_x").toUInt(),
+        config->value("main/corner_count_y").toUInt(),
+        config->value("main/corners_width").toDouble(),
+        config->value("main/corners_height").toDouble(),
+        config->value(THRESHOLD_CONFIG, THRESHOLD_DEFAULT).toInt(),
+        config->value(ROBUST_B_CONFIG, ROBUST_B_DEFAULT).toFloat(),
+        config->value(ROBUST_M_CONFIG, ROBUST_M_DEFAULT).toUInt(),
+        config->value(HOMOGRAPHY_WINDOW_CONFIG, HOMOGRAPHY_WINDOW_DEFAULT).toUInt(),
+        config->value(INTRINSICS_SOURCE_CONFIG, QString(INTRINSICS_SOURCE_DEFAULT)).toString().toStdString().c_str(),
+        cam_pve_str.c_str(),
+        proj_pve_str.c_str(),
+        stereo_pve_str.c_str()
+        );
+    fclose(fp);
     return true;
 }
 
