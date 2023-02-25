@@ -941,27 +941,38 @@ void Application::calibrate(void)
     calib.proj_height = projector_size.height;
     std::vector<cv::Mat> proj_rvecs, proj_tvecs;
     calib.proj_K = cv::Mat::eye(3, 3, CV_32F);
-    // Optoma GT1080HDR Parameters
-    calib.proj_K.at<float>(0, 0) = 1000.0;                      // fx
-    calib.proj_K.at<float>(1, 1) = 1000.0f;                     // fy
-    // If cx or cy are outside of the image plane (less than 0 or greater than image dimensions),
-    // you will need a custom OpenCV build that is modified to remove the bounds check (in calibration.cpp).
-    calib.proj_K.at<float>(0, 2) = 960.0f;                      // cx (1920 / 2)
-    calib.proj_K.at<float>(1, 2) = 1252.8f;                     // cy (116% offset, so 1080 * 1.16 = 1252.8)
+    //// Optoma GT1080HDR Parameters
+    //calib.proj_K.at<float>(0, 0) = 1000.0;                      // fx
+    //calib.proj_K.at<float>(1, 1) = 1000.0f;                     // fy
+    //// If cx or cy are outside of the image plane (less than 0 or greater than image dimensions),
+    //// you will need a custom OpenCV build that is modified to remove the bounds check (in calibration.cpp).
+    //calib.proj_K.at<float>(0, 2) = 960.0f;                      // cx (1920 / 2)
+    //calib.proj_K.at<float>(1, 2) = 1252.8f;                     // cy (116% offset, so 1080 * 1.16 = 1252.8)
+    //calib.proj_kc = cv::Mat::zeros(1, 5, CV_32F);
+
+    //// Solve for focal length only. 
+    //int proj_flags = cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_ZERO_TANGENT_DIST | cv::CALIB_FIX_K3 | cv::CALIB_FIX_K1 | cv::CALIB_FIX_K2 | cv::CALIB_FIX_PRINCIPAL_POINT | cv::CALIB_FIX_ASPECT_RATIO;
+    //calib.proj_error = cv::calibrateCamera(world_corners_active, projector_corners_active, projector_size, calib.proj_K, calib.proj_kc, proj_rvecs, proj_tvecs,
+    //                                         placeholder, placeholder, calib.proj_per_view_errors, proj_flags, cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
+    //
+    //// Refine principal point only.
+    //proj_flags = cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_ZERO_TANGENT_DIST | cv::CALIB_FIX_K3 | cv::CALIB_FIX_K1 | cv::CALIB_FIX_K2 | cv::CALIB_FIX_FOCAL_LENGTH;
+    //calib.proj_error = cv::calibrateCamera(world_corners_active, projector_corners_active, projector_size, calib.proj_K, calib.proj_kc, proj_rvecs, proj_tvecs,
+    //                                         placeholder, placeholder, calib.proj_per_view_errors, proj_flags, cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
+
+    //// Solve for k1 and k2 radial distortion coefficients only.
+    //proj_flags = cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_ZERO_TANGENT_DIST | cv::CALIB_FIX_K3 | cv::CALIB_FIX_PRINCIPAL_POINT | cv::CALIB_FIX_FOCAL_LENGTH;
+    //calib.proj_error = cv::calibrateCamera(world_corners_active, projector_corners_active, projector_size, calib.proj_K, calib.proj_kc, proj_rvecs, proj_tvecs,
+    //                                         placeholder, placeholder, calib.proj_per_view_errors, proj_flags, cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
+
+    // EKB Initial Guess for Parameters
+    calib.proj_K.at<float>(0, 0) = 1000.0f; // fx
+    calib.proj_K.at<float>(1, 1) = 1000.0f; // fy
+    calib.proj_K.at<float>(0, 2) = 960.0f;  // cx (1920 / 2)
+    calib.proj_K.at<float>(1, 2) = 540.0f;  // cy (1080 / 2)
     calib.proj_kc = cv::Mat::zeros(1, 5, CV_32F);
 
-    // Solve for focal length only. 
-    int proj_flags = cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_ZERO_TANGENT_DIST | cv::CALIB_FIX_K3 | cv::CALIB_FIX_K1 | cv::CALIB_FIX_K2 | cv::CALIB_FIX_PRINCIPAL_POINT | cv::CALIB_FIX_ASPECT_RATIO;
-    calib.proj_error = cv::calibrateCamera(world_corners_active, projector_corners_active, projector_size, calib.proj_K, calib.proj_kc, proj_rvecs, proj_tvecs,
-                                             placeholder, placeholder, calib.proj_per_view_errors, proj_flags, cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
-    
-    // Refine principal point only.
-    proj_flags = cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_ZERO_TANGENT_DIST | cv::CALIB_FIX_K3 | cv::CALIB_FIX_K1 | cv::CALIB_FIX_K2 | cv::CALIB_FIX_FOCAL_LENGTH;
-    calib.proj_error = cv::calibrateCamera(world_corners_active, projector_corners_active, projector_size, calib.proj_K, calib.proj_kc, proj_rvecs, proj_tvecs,
-                                             placeholder, placeholder, calib.proj_per_view_errors, proj_flags, cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
-
-    // Solve for k1 and k2 radial distortion coefficients only.
-    proj_flags = cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_ZERO_TANGENT_DIST | cv::CALIB_FIX_K3 | cv::CALIB_FIX_PRINCIPAL_POINT | cv::CALIB_FIX_FOCAL_LENGTH;
+    int proj_flags = cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_ZERO_TANGENT_DIST | cv::CALIB_FIX_K3 | cv::CALIB_FIX_ASPECT_RATIO;
     calib.proj_error = cv::calibrateCamera(world_corners_active, projector_corners_active, projector_size, calib.proj_K, calib.proj_kc, proj_rvecs, proj_tvecs,
                                              placeholder, placeholder, calib.proj_per_view_errors, proj_flags, cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
 
