@@ -972,7 +972,7 @@ void Application::calibrate(void)
     calib.proj_K.at<float>(1, 2) = 540.0f;  // cy (1080 / 2)
     calib.proj_kc = cv::Mat::zeros(1, 5, CV_32F);
 
-    int proj_flags = cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_ZERO_TANGENT_DIST | cv::CALIB_FIX_K3 | cv::CALIB_FIX_ASPECT_RATIO;
+    int proj_flags = cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_ZERO_TANGENT_DIST | cv::CALIB_FIX_K3 | cv::CALIB_FIX_ASPECT_RATIO | cv::CALIB_FIX_PRINCIPAL_POINT;
     calib.proj_error = cv::calibrateCamera(world_corners_active, projector_corners_active, projector_size, calib.proj_K, calib.proj_kc, proj_rvecs, proj_tvecs,
                                              placeholder, placeholder, calib.proj_per_view_errors, proj_flags, cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
 
