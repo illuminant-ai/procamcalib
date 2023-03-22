@@ -911,6 +911,7 @@ void Application::calibrate(void)
     } else {
         processing_message(QString(" * Importing %1 intrinsics").arg(intrinsics_source));
         if (intrinsics_source == "Photoneo") {
+
             calib.cam_K = cv::Mat::eye(3, 3, CV_32F);
             calib.cam_K.at<float>(0, 0) = 1737.3321211497578f;   // fx
             calib.cam_K.at<float>(1, 1) = 1737.4827632466724f;   // fy
@@ -966,13 +967,13 @@ void Application::calibrate(void)
     //                                         placeholder, placeholder, calib.proj_per_view_errors, proj_flags, cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
 
     // EKB Initial Guess for Parameters
-    calib.proj_K.at<float>(0, 0) = 1000.0f; // fx
-    calib.proj_K.at<float>(1, 1) = 1000.0f; // fy
+    calib.proj_K.at<float>(0, 0) = 2340.0f; // fx
+    calib.proj_K.at<float>(1, 1) = 2340.0f; // fy
     calib.proj_K.at<float>(0, 2) = 960.0f;  // cx (1920 / 2)
     calib.proj_K.at<float>(1, 2) = 540.0f;  // cy (1080 / 2)
     calib.proj_kc = cv::Mat::zeros(1, 5, CV_32F);
 
-    int proj_flags = cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_ZERO_TANGENT_DIST | cv::CALIB_FIX_K3 | cv::CALIB_FIX_ASPECT_RATIO | cv::CALIB_FIX_PRINCIPAL_POINT;
+    int proj_flags = cv::CALIB_USE_INTRINSIC_GUESS | cv::CALIB_ZERO_TANGENT_DIST | cv::CALIB_FIX_K3 | cv::CALIB_FIX_ASPECT_RATIO;
     calib.proj_error = cv::calibrateCamera(world_corners_active, projector_corners_active, projector_size, calib.proj_K, calib.proj_kc, proj_rvecs, proj_tvecs,
                                              placeholder, placeholder, calib.proj_per_view_errors, proj_flags, cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
 
