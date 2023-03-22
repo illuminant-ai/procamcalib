@@ -316,14 +316,8 @@ bool CalibrationData::save_calibration_json(QString const& path, int cam_flags, 
     std::cout << unity_pose << std::endl;
     std::cout << std::endl;
 
-    // convert unity pose to obj mesh compatible system
-    cv::Mat scene_pose = convert_transform_from_unity_to_scene(unity_pose);
-    std::cout << "Mesh Compatible Pose:" << std::endl;
-    std::cout << scene_pose << std::endl;
-    std::cout << std::endl;
-
     // extract rotation
-    cv::Mat rot = rot2euler_unity(scene_pose(cv::Rect_<int>(0, 0, 3, 3)));
+    cv::Mat rot = rot2euler_unity(unity_pose(cv::Rect_<int>(0, 0, 3, 3)));
     std::cout << "Rotation" << std::endl;
     std::cout << rot << std::endl;
     std::cout << std::endl;
@@ -373,9 +367,9 @@ bool CalibrationData::save_calibration_json(QString const& path, int cam_flags, 
         rot.at<double>(0, 0),
         rot.at<double>(1, 0),
         rot.at<double>(2, 0),
-        scene_pose.at<double>(0, 3),
-        scene_pose.at<double>(1, 3),
-        scene_pose.at<double>(2, 3)
+        unity_pose.at<double>(0, 3),
+        unity_pose.at<double>(1, 3),
+        unity_pose.at<double>(2, 3)
     );
     fclose(fp);
 
