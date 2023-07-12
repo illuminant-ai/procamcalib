@@ -58,23 +58,43 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <opencv2/imgproc/imgproc.hpp>
 
-VideoInput::VideoInput(QObject  * parent): 
+VideoInput::VideoInput(QObject* parent) :
     QThread(parent),
     _camera_index(-1),
 #ifdef USE_SPINNAKER
-     _camera_name(""),
+    _camera_name(""),
     _spinnaker_system(Spinnaker::System::GetInstance()),
     _spinnaker_camera(nullptr),
 #endif
-// Photoneo Support: Initialize Photoneo members / globals
+    // Photoneo Support: Initialize Photoneo members / globals
 #ifdef USE_PHOTONEO
     _camera_name(""),
     _photoneo_camera(nullptr),
 #endif
+
+#ifdef USE_ZIVID
+    _camera_name(""),
+#endif // USE_ZIVID
+
     _video_capture(NULL),
     _init(false),
     _stop(false)
+
 {
+    // Create acquisition settings
+    settings = Zivid::Settings{
+        Zivid::Settings::Experimental::Engine::phase,
+        Zivid::Settings::Acquisitions{
+            Zivid::Settings::Acquisition{
+                Zivid::Settings::Acquisition::ExposureTime{std::chrono::microseconds{35000}},
+                Zivid::Settings::Acquisition::Aperture{5.00},
+                Zivid::Settings::Acquisition::Brightness{1.00},
+                Zivid::Settings::Acquisition::Gain{1.00}
+            }
+        },
+        Zivid::Settings::Processing::Filters::Outlier::Removal::Enabled::yes,
+        Zivid::Settings::Processing::Filters::Outlier::Removal::Threshold{5.0}
+    };
     qRegisterMetaType<cv::Mat>("cv::Mat");
 }
 
@@ -92,6 +112,17 @@ VideoInput::~VideoInput()
 		_photoneo_camera->Disconnect();
 	}
 #endif
+#ifdef USE_ZIVID
+    try
+    {
+        _zivid_camera.disconnect();
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Error: " << Zivid::toString(e) << std::endl;
+    }
+#endif // USE_ZIVID
+
 }
 
 void VideoInput::run()
@@ -229,6 +260,25 @@ void VideoInput::run()
         --------------------------------------------------------------------------------------------------*/
     }
 #endif
+#ifdef USE_ZIVID
+    while (!_stop && error_count < max_error)
+    {
+        const auto frame = _zivid_camera.capture(settings);
+        auto pointCloud = frame.pointCloud();
+
+        auto image = cv::Mat(pointCloud.height(), pointCloud.width(), CV_8UC4);
+        pointCloud.copyData(reinterpret_cast<Zivid::ColorBGRA*>(image.data));
+        constexpr double minVal = 0.0;
+        constexpr double maxVal = 1024.0;
+
+        // Convert to 8UC3 with proper normalization - 8UC3 allows display by the camera preview.
+        constexpr double scaling_factor = 255.0 / (maxVal - minVal);
+        constexpr double increment = -255.0 * minVal / (maxVal - minVal);
+        image.convertTo(image, CV_8UC3, scaling_factor, increment);
+        emit new_image(image);
+    }
+#endif // USE_ZIVID
+
 
     while(_video_capture && !_stop && error_count<max_error)
     {
@@ -343,6 +393,11 @@ bool VideoInput::start_camera(void)
     else
     {
 #endif
+#ifdef USE_ZIVID
+        _zivid_camera = _zivid_application.connectCamera();
+        
+#endif // USE_ZIVID
+
     //_video_capture = cvCaptureFromCAM(CLASS + index);
     _video_capture = std::make_shared<cv::VideoCapture>(CLASS + index);
     if(!_video_capture)
@@ -817,6 +872,16 @@ QStringList VideoInput::list_devices_photoneo()
 }
 
 #endif
+#ifdef USE_ZIVID
+QStringList VideoInput::list_devices_zivid()
+{
+    QStringList list;
+    list += "12345";
+    return list;
+}
+
+#endif // USE_ZIVID
+
 
 void VideoInput::waitForStart(void)
 {
@@ -869,6 +934,10 @@ QStringList VideoInput::list_devices(void)
 #ifdef USE_PHOTONEO
     list += list_devices_photoneo();
 #endif
+#ifdef USE_ZIVID
+    list += list_devices_zivid();
+#endif // USE_ZIVID
+
 
     return list;
 }

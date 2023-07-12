@@ -239,7 +239,10 @@ bool CaptureDialog::start_camera(void)
     // }
 
 #endif
+#ifdef USE_ZIVID
+    _video_input.set_camera_name(camera_combo->currentText().toStdString());
 
+#endif
     if (!_video_input.isRunning())
     {
         _video_input.start();
