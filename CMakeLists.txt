@@ -62,14 +62,14 @@ add_executable(${PROJECT_NAME}
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE src forms ${OPENCV_INCLUDE_DIRS} ${OPENGL_INCLUDE_DIRS} ${Qt5OpenGL_INCLUDE_DIRS})
-target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} ${OPENGL_LIBRARIES} Qt5::OpenGL)
+target_link_libraries(${PROJECT_NAME} PRIVATE ${OpenCV_LIBS} ${OPENGL_LIBRARIES} Qt5::OpenGL)
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
 
 if(WITH_SPINNAKER)
     find_package(Spinnaker REQUIRED)
     
     target_include_directories(${PROJECT_NAME} PRIVATE ${SPINNAKER_INCLUDE_DIRS})
-    target_link_libraries(${PROJECT_NAME} ${SPINNAKER_LIBRARIES})
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${SPINNAKER_LIBRARIES})
     target_compile_definitions(${PROJECT_NAME} PRIVATE USE_SPINNAKER)
 
     target_sources(${PROJECT_NAME} PRIVATE
@@ -89,7 +89,7 @@ if(WITH_PHOTONEO)
 	find_package(PhoXi REQUIRED CONFIG PATHS "${PHO_API_CMAKE_CONFIG_PATH_ESCAPED}")
 
     target_include_directories(${PROJECT_NAME} PRIVATE ${PHOXI_INCLUDE_DIRS})
-    target_link_libraries(${PROJECT_NAME} ${PHOXI_LIBRARY})
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${PHOXI_LIBRARY})
     target_compile_definitions(${PROJECT_NAME} PRIVATE USE_PHOTONEO)
 
     MESSAGE(STATUS "Building with the Photoneo API")
@@ -98,13 +98,14 @@ endif()
 # Zivid Support
 if(WITH_ZIVID)
     # use zivid package
+    #2.9.0+4dbba385-1
     set(ZIVID_VERSION 2.9.0)
     find_package(
         Zivid ${ZIVID_VERSION}
         COMPONENTS Core
         REQUIRED)
     include_directories(${PROJECT_NAME} "C:/Program Files/Zivid/include/")
-    target_link_libraries(${PROJECT_NAME} Zivid::Core)
+    target_link_libraries(${PROJECT_NAME} PRIVATE  Zivid::Core)
     target_compile_definitions(${PROJECT_NAME} PRIVATE _USE_MATH_DEFINES USE_ZIVID)
     MESSAGE(STATUS "Building with the Zivid API")
 
@@ -114,7 +115,7 @@ if(WIN32)
     find_package(DirectShow COMPONENTS Strmiids Vfw32 Ole32 OleAut32 REQUIRED)
 
     target_include_directories(${PROJECT_NAME} PRIVATE ${DirectShow_INCLUDE_DIR})
-    target_link_libraries(${PROJECT_NAME} ${DIRECTSHOW_LIBRARIES})
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${DIRECTSHOW_LIBRARIES})
     target_compile_definitions(${PROJECT_NAME} PRIVATE NOMINMAX _CRT_SECURE_NO_WARNINGS _SCL_SECURE_NO_WARNINGS _USE_MATH_DEFINES)
     #target_compile_options(${PROJECT_NAME} PRIVATE /MT)
     #target_link_options(${PROJECT_NAME} PRIVATE /INCREMENTAL:NO /NODEFAULTLIB:MSVCRT)
@@ -124,5 +125,4 @@ if(WITH_ZIVID)
     target_compile_options(${PROJECT_NAME} PRIVATE /MD)
 endif()
 
-install(TARGETS ${PROJECT_NAME} DESTINATION bin)
 

@@ -46,6 +46,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // Zivid Support: Add Zivid Header Files
 #ifdef USE_ZIVID
+#undef isnan
+#undef UNICODE
 #include "Zivid/Zivid.h"
 #endif
 
@@ -85,7 +87,7 @@ public:
 #ifdef USE_ZIVID
     inline void set_camera_name(std::string name) { _camera_name = name; }
     inline std::string get_camera_name(void) const { return _camera_name; }
-    inline bool is_zivid_camera(void) const { return _camera_name != "" && _camera_name.rfind("Zivid2", 0) == 0; }
+    inline bool is_zivid_camera(void) const { return _camera_name != "" && _camera_name.rfind("Zivid", 0) == 0; }
     QStringList list_devices_zivid();
 #endif
 
@@ -153,7 +155,8 @@ private:
     std::string _camera_name;
     Zivid::Application _zivid_application;
     Zivid::Camera _zivid_camera;
-    Zivid::Settings settings;
+    bool zivid_initialized = false;
+    Zivid::Settings2D settings;
 #endif // USE_ZIVID
 
 
