@@ -58,22 +58,27 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <opencv2/imgproc/imgproc.hpp>
 
-VideoInput::VideoInput(QObject  * parent): 
+VideoInput::VideoInput(QObject* parent) :
     QThread(parent),
     _camera_index(-1),
 #ifdef USE_SPINNAKER
-     _camera_name(""),
+    _camera_name(""),
     _spinnaker_system(Spinnaker::System::GetInstance()),
     _spinnaker_camera(nullptr),
 #endif
-// Photoneo Support: Initialize Photoneo members / globals
+    // Photoneo Support: Initialize Photoneo members / globals
 #ifdef USE_PHOTONEO
     _camera_name(""),
     _photoneo_camera(nullptr),
 #endif
+#ifdef USE_ZIVID
+    _camera_name(""),
+#endif // USE_ZIVID
     _video_capture(NULL),
     _init(false),
     _stop(false)
+
+
 {
     qRegisterMetaType<cv::Mat>("cv::Mat");
 }
@@ -92,6 +97,21 @@ VideoInput::~VideoInput()
 		_photoneo_camera->Disconnect();
 	}
 #endif
+// Zivid Support: Teardown Zivid connection
+#ifdef USE_ZIVID
+    if (zivid_initialized)
+    {
+        try
+        {
+            _zivid_camera.disconnect();
+            zivid_initialized = false;
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "Error: " << Zivid::toString(e) << std::endl;
+        }
+    }
+#endif // USE_ZIVID
 }
 
 void VideoInput::run()
@@ -229,6 +249,39 @@ void VideoInput::run()
         --------------------------------------------------------------------------------------------------*/
     }
 #endif
+// Zivid Support: Capture images from Zivid2 sensor
+#ifdef USE_ZIVID
+    while (zivid_initialized && !_stop && error_count < max_error)
+    {
+        _last_frame_trigger_time = std::chrono::steady_clock::now();
+
+        const auto frame = _zivid_camera.capture(settings);
+        const auto image = frame.imageRGBA();
+        //auto pointCloud = frame.pointCloud();
+
+        auto bgra = cv::Mat(image.height(), image.width(), CV_8UC4);
+
+        for (int row = 0; row < image.height(); row++)
+        {
+            for (int col = 0; col < image.width(); col++)
+            {
+                const auto pixel = image(row, col);
+                cv::Vec4b& pixel1 = bgra.at<cv::Vec4b>(row, col);
+
+                // Load the pixel values byte by byte
+                pixel1[0] = pixel.r;
+                pixel1[1] = pixel.g;
+                pixel1[2] = pixel.b;
+                pixel1[3] = pixel.a;
+            }
+        }
+
+        auto bgr = cv::Mat(image.height(), image.width(), CV_8UC3);
+        cv::cvtColor(bgra, bgr, cv::COLOR_RGBA2BGR);
+        emit new_image(bgr);
+    }
+#endif // USE_ZIVID
+
 
     while(_video_capture && !_stop && error_count<max_error)
     {
@@ -262,6 +315,9 @@ bool VideoInput::start_camera(void)
 #elif USE_PHOTONEO
 // Photoneo Support: check if Photoneo camera or video capture initialized
     if (_photoneo_camera || _video_capture)
+// Zivid Support: check if Zivid camera is initialised or video capture initialised
+#elif USE_ZIVID
+    if (zivid_initialized || _video_capture)
 #else
     if (_video_capture)
 #endif
@@ -343,6 +399,31 @@ bool VideoInput::start_camera(void)
     else
     {
 #endif
+// Zivid Support: If selected camera is Zivid, set zivid_camera.initialized to true
+#ifdef USE_ZIVID
+    if (is_zivid_camera())
+    {
+        _zivid_camera = _zivid_application.connectCamera();
+        settings = Zivid::Settings2D
+        {
+            Zivid::Settings2D::Acquisitions{ Zivid::Settings2D::Acquisition{
+            Zivid::Settings2D::Acquisition::ExposureTime{ std::chrono::microseconds{ 30000 } },
+            Zivid::Settings2D::Acquisition::Aperture{ 5 },
+            Zivid::Settings2D::Acquisition::Brightness{ 1.2 },
+            Zivid::Settings2D::Acquisition::Gain{ 1.0 } } },
+            Zivid::Settings2D::Processing::Color::Balance::Red{ 1 },
+            Zivid::Settings2D::Processing::Color::Balance::Green{ 1 },
+            Zivid::Settings2D::Processing::Color::Balance::Blue{ 1 },
+            Zivid::Settings2D::Processing::Color::Gamma{1.5}
+    };
+        zivid_initialized = true;
+    }
+    else
+    {
+#endif // USE_ZIVID
+
+        
+
     //_video_capture = cvCaptureFromCAM(CLASS + index);
     _video_capture = std::make_shared<cv::VideoCapture>(CLASS + index);
     if(!_video_capture)
@@ -371,6 +452,16 @@ bool VideoInput::start_camera(void)
     else
     {
 #endif
+#ifdef USE_ZIVID
+    }
+
+    if (is_zivid_camera())
+    {
+        configure_zivid_camera(index, silent);
+    }
+    else
+    {
+#endif // USE_ZIVID
 #ifdef _MSC_VER
     configure_dshow(index,silent);
 #endif
@@ -385,6 +476,10 @@ bool VideoInput::start_camera(void)
 #endif
 // Photoneo Support: End the other else statement to catch the photoneo config clause
 #ifdef USE_PHOTONEO
+    }
+#endif
+// Zivid Support: End the other else statement to catch the zivid config clause
+#ifdef USE_ZIVID
     }
 #endif
     return true;
@@ -410,6 +505,19 @@ void VideoInput::stop_camera(bool force)
         _camera_name = "";
     }
 #endif
+// Zivid Support: Stop the Zivid camera acquisiition, tear it down
+#ifdef USE_ZIVID
+    try
+    {
+        _zivid_camera.disconnect();
+        zivid_initialized = false;
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Error: " << Zivid::toString(e) << std::endl;
+    }
+#endif // USE_ZIVID
+
     if (_video_capture)
     {
 #ifndef Q_OS_MAC //HACK: do not close on mac because it hangs the application
@@ -817,6 +925,24 @@ QStringList VideoInput::list_devices_photoneo()
 }
 
 #endif
+#ifdef USE_ZIVID
+//Zivid Support: Configure Zivid camera and application
+void VideoInput::configure_zivid_camera(int index, bool silent)
+{
+    if (zivid_initialized)
+    {
+        std::cout << "Zivid initialised." << std::endl;
+    }
+}
+//Zivid Support: Allow Zivid camera to show up in the list
+QStringList VideoInput::list_devices_zivid()
+{
+    QStringList list;
+    list += "Zivid";
+    return list;
+}
+
+#endif // USE_ZIVID
 
 void VideoInput::waitForStart(void)
 {
@@ -868,6 +994,10 @@ QStringList VideoInput::list_devices(void)
 // Photoneo Support: Add photoneo camera to the list
 #ifdef USE_PHOTONEO
     list += list_devices_photoneo();
+#endif
+// Zivid Support: Add zivid camera to the list
+#ifdef USE_ZIVID
+    list += list_devices_zivid();
 #endif
 
     return list;
