@@ -101,3 +101,18 @@ To build with Photoneo support:
 3. Build the project after editing the intrinsics.
 
 4. Capture 20+ poses of the checkerboard in view of the camera.
+
+# Distribution
+To run on a machine without QT or OpenCV installed:
+1. Copy the exe to the target machine
+2. Copy relevant dlls to the same directory as scan3d-capture.exe
+    - opencv_calib3d470.dll
+    - opencv_videoio470.dll
+    - opencv_imgcodex470.dll
+    - opencv_imgproc470.dll
+    - opencv_core470.dll
+    - opencv_flann470.dll
+    - opencv_features2d470.dll
+3. To get the QT dependencies, run "windeployqt scan3d-capture.exe" in the build folder
+   on the dev machine that has QT installed - this will copy in all the QT dependencies which
+   can be transferred to the machine without QT
