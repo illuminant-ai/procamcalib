@@ -44,6 +44,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "PhoXi.h"
 #endif
 
+// Zivid Support: Add Zivid Header Files
+#ifdef USE_ZIVID
+#undef isnan
+#include "Zivid/Zivid.h"
+#endif // USE_ZIVID
+
+
 class VideoInput : public QThread
 {
     Q_OBJECT
@@ -76,7 +83,13 @@ public:
     // void update_camera_parameters();
     QStringList list_devices_photoneo();
 #endif
-
+// Zivid: Add Zivid public methods
+#ifdef USE_ZIVID
+    inline void set_camera_name(std::string name) { _camera_name = name; }
+    inline std::string get_camera_name(void) const { return _camera_name; }
+    inline bool is_zivid_camera(void) const { return _camera_name != "" && _camera_name.rfind("Zivid", 0) == 0; }
+    QStringList list_devices_zivid();
+#endif
     void setImageSize(size_t width, size_t height);
 
     QStringList list_devices(void);
@@ -114,6 +127,11 @@ private:
 #ifdef USE_PHOTONEO
     void configure_photoneo_camera(int index, bool silent);
 #endif
+ // Zivid Support: Add Zivid private methods
+#ifdef USE_ZIVID
+    void configure_zivid_camera(int index, bool silent);
+#endif
+
 
 public:
     std::chrono::time_point<std::chrono::steady_clock> _last_frame_trigger_time;
@@ -130,6 +148,15 @@ private:
 	pho::api::PhoXiFactory _photoneo_system;
 	pho::api::PPhoXi _photoneo_camera;
 #endif
+// Zivid Support: Add Zivid private members
+#ifdef USE_ZIVID
+    std::string _camera_name;
+    Zivid::Application _zivid_application;
+    Zivid::Camera _zivid_camera;
+    bool zivid_initialized = false;
+    Zivid::Settings2D settings;
+#endif // USE_ZIVID
+
     std::shared_ptr<cv::VideoCapture> _video_capture;
     volatile bool _init;
     volatile bool _stop;
