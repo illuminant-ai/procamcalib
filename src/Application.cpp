@@ -44,7 +44,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "structured_light.hpp"
 
 #include "cognex_util.hpp"
-
+#ifdef USE_ZIVID
+#undef isnan
+#include "Zivid/Zivid.h"
+#endif // USE_ZIVID
 
 Application::Application(int & argc, char ** argv) : 
     QApplication(argc, argv),
@@ -208,8 +211,8 @@ void Application::set_root_dir(const QString & dirname)
             int width, height;
             if (fscanf(fp, "%u %u", &width, &height)==2 && width>0 && height)
             {   //ok
-                projector_width = width;
-                projector_height = height;
+                projector_width = 1920;
+                projector_height = 1080;
                 std::cerr << "Projector info file loaded: " << projector_filename.toStdString() << std::endl;
             }
             else
@@ -329,6 +332,7 @@ int Application::get_camera_height(unsigned level) const
 
 int Application::get_projector_width(unsigned level) const
 {
+    return 1920;
     if (static_cast<int>(level)<model.rowCount())
     {   //ok
         QModelIndex parent = model.index(level, 0);
@@ -339,6 +343,7 @@ int Application::get_projector_width(unsigned level) const
 
 int Application::get_projector_height(unsigned level) const
 {
+    return 1080;
     if (static_cast<int>(level)<model.rowCount())
     {   //ok
         QModelIndex parent = model.index(level, 0);
@@ -910,7 +915,21 @@ void Application::calibrate(void)
     // Source intrisics from external parameters (e.g. manufacturer supplied).
     } else {
         processing_message(QString(" * Importing %1 intrinsics").arg(intrinsics_source));
-        if (intrinsics_source == "Photoneo") {
+        if (intrinsics_source == "Zivid") {
+
+            calib.cam_K = cv::Mat::eye(3, 3, CV_32F);
+            calib.cam_K.at<float>(0, 0) = 1784.7347412109375f;   // fx
+            calib.cam_K.at<float>(1, 1) = 1784.8966064453125f;   // fy
+            calib.cam_K.at<float>(0, 2) = 972.4698486328125f;   // cx
+            calib.cam_K.at<float>(1, 2) = 605.376220703125f;   // cy
+            calib.cam_kc = cv::Mat::zeros(1, 5, CV_32F);
+            calib.cam_kc.at<float>(0, 0) = -0.0883005f;          // k1 (radial)
+            calib.cam_kc.at<float>(0, 1) = 0.131585f;            // k2 (radial)
+            calib.cam_kc.at<float>(0, 2) = 0.00136938f;         // p1 (tangential)
+            calib.cam_kc.at<float>(0, 3) = -0.000411662f;          // p2 (tangential)
+            calib.cam_kc.at<float>(0, 4) = 0.0605048f;           // k3 (radial)
+        }
+        else if (intrinsics_source == "Photoneo") {
 
             calib.cam_K = cv::Mat::eye(3, 3, CV_32F);
             calib.cam_K.at<float>(0, 0) = 1737.3321211497578f;   // fx

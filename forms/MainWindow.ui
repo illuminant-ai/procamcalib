@@ -525,6 +525,11 @@
              <string>RealSense</string>
             </property>
            </item>
+              <item>
+            <property name="text">
+             <string>Zivid</string>
+            </property>
+           </item>
            <item>
             <property name="text">
              <string>Photoneo</string>
