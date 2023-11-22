@@ -242,6 +242,10 @@ bool CaptureDialog::start_camera(void)
 #ifdef USE_ZIVID
     _video_input.set_camera_name(camera_combo->currentText().toStdString());
 #endif // USE_ZIVID
+#ifdef USE_ORBBEC
+    _video_input.set_camera_name(camera_combo->currentText().toStdString());
+#endif // USE_ORBBEC
+
 
 
     if (!_video_input.isRunning())
@@ -320,7 +324,7 @@ void CaptureDialog::_on_root_dir_changed(const QString & dirname)
 
 void CaptureDialog::_on_new_camera_image(cv::Mat image)
 {
-	size_t rotation = 0;
+    size_t rotation = 0;
 	if (rot_000_radio->isChecked()) { rotation = 0; }
 	if (rot_090_radio->isChecked()) { rotation = 90; }
 	if (rot_180_radio->isChecked()) { rotation = 180; }
@@ -440,6 +444,7 @@ void CaptureDialog::on_capture_button_clicked(bool checked)
     while (!_projector.finished())
     {
         _projector.next();
+
 
         //wait for projector
         while (!_projector.is_updated())

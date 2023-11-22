@@ -74,6 +74,10 @@ VideoInput::VideoInput(QObject* parent) :
 #ifdef USE_ZIVID
     _camera_name(""),
 #endif // USE_ZIVID
+#ifdef USE_ORBBEC
+    _camera_name(""),
+#endif // USE_ORBBEC
+
     _video_capture(NULL),
     _init(false),
     _stop(false)
@@ -112,6 +116,22 @@ VideoInput::~VideoInput()
         }
     }
 #endif // USE_ZIVID
+//Orbbec Support: Teardown Orbbec Connection
+#ifdef USE_ORBBEC
+    if (orbbec_initialized)
+    {
+        try
+        {
+            orbbec_pipeline.stop();
+            orbbec_initialized = false;
+        }
+        catch (ob::Error& e)
+        {
+            std::cerr << "ORBBEC ERROR -> function:" << e.getName() << "\nargs:" << e.getArgs() << "\nmessage:" << e.getMessage() << "\ntype:" << e.getExceptionType() << std::endl;
+        }
+    }
+#endif // USE_ORBBEC
+
 }
 
 void VideoInput::run()
@@ -282,9 +302,39 @@ void VideoInput::run()
     }
 #endif // USE_ZIVID
 
+// Orbbec Support: Capture images from Astra2 RGB Sensor
+#ifdef USE_ORBBEC
+    while (orbbec_initialized && !_stop && error_count < max_error)
+    {
+        _last_frame_trigger_time = std::chrono::steady_clock::now();
+        auto frameSet = orbbec_pipeline.waitForFrames(1000);
+        if (frameSet == nullptr) {
+            continue;
+        }
+        else
+        {
+            auto colorFrame = frameSet->colorFrame();
+            if (colorFrame != nullptr)
+            {
+                
+                auto rgb_frame = cv::Mat(colorFrame->height(), colorFrame->width(), CV_8UC3, (uint8_t*)colorFrame->data());
+                emit new_image(rgb_frame);
+            }
+            else
+            {
+                std::cerr << "DEPTH OR COLOR FRAMES EMPTY" << std::endl;
+                orbbec_pipeline.stop();
+                orbbec_pipeline.start(orbbec_config);
+            }
+        }
+    }
+#endif // USE_ORBBEC
+
 
     while(_video_capture && !_stop && error_count<max_error)
     {
+        _last_frame_trigger_time = std::chrono::steady_clock::now();
+
         cv::Mat frame;
         if (_video_capture->read(frame))
         {   //ok
@@ -318,6 +368,8 @@ bool VideoInput::start_camera(void)
 // Zivid Support: check if Zivid camera is initialised or video capture initialised
 #elif USE_ZIVID
     if (zivid_initialized || _video_capture)
+#elif USE_ORBBEC
+    if(orbbec_initialized || _video_capture)
 #else
     if (_video_capture)
 #endif
@@ -422,6 +474,30 @@ bool VideoInput::start_camera(void)
     {
 #endif // USE_ZIVID
 
+// Orbbec Support: If selected camera is Orbbec, set orbbec_camera.inititalized to true
+#ifdef USE_ORBBEC
+        if (is_orbbec_camera())
+        {
+            orbbec_config = std::make_shared<ob::Config>();
+            orbbec_pipeline.getStreamProfileList(OB_SENSOR_COLOR);
+            color_profile = orbbec_pipeline.getStreamProfileList(OB_SENSOR_COLOR)->getVideoStreamProfile(1920, OB_HEIGHT_ANY, OB_FORMAT_RGB888, 30);
+            std::cout << "@enoch: created RGB stream profile" << std::endl;
+            orbbec_config->enableStream(color_profile);
+            orbbec_config->setAlignMode(ALIGN_D2C_SW_MODE);
+
+            orbbec_pipeline.switchConfig(orbbec_config);
+            orbbec_initialized = true;
+            try {
+                orbbec_pipeline.start(orbbec_config);
+            }
+            catch (ob::Error& e) {
+                std::cerr << "ORBBEC ERROR: function:" << e.getName() << "\nargs:" << e.getArgs() << "\nmessage:" << e.getMessage() << "\ntype:" << e.getExceptionType() << std::endl;
+            }
+        }
+        else
+        {
+#endif // USE_ORBBEC
+
         
 
     //_video_capture = cvCaptureFromCAM(CLASS + index);
@@ -462,26 +538,41 @@ bool VideoInput::start_camera(void)
     else
     {
 #endif // USE_ZIVID
+#ifdef USE_ORBBEC
+    }
+    if (is_orbbec_camera())
+    {
+        configure_orbbec_camera(index, silent);
+    }
+    else
+    {
+#endif // USE_ORBBEC
+
 #ifdef _MSC_VER
-    configure_dshow(index,silent);
+        configure_dshow(index, silent);
 #endif
 #ifdef Q_OS_MAC
-    configure_quicktime(index,silent);
+        configure_quicktime(index, silent);
 #endif
 #ifdef Q_OS_LINUX
-    configure_v4l2(index,silent);
+        configure_v4l2(index, silent);
 #endif
 #ifdef USE_SPINNAKER
     }
 #endif
-// Photoneo Support: End the other else statement to catch the photoneo config clause
+    // Photoneo Support: End the other else statement to catch the photoneo config clause
 #ifdef USE_PHOTONEO
     }
 #endif
-// Zivid Support: End the other else statement to catch the zivid config clause
+    // Zivid Support: End the other else statement to catch the zivid config clause
 #ifdef USE_ZIVID
     }
 #endif
+    // Orbbec Support: End the other else statement to catch the zivid config clause
+#ifdef USE_ORBBEC
+    }
+#endif // USE_ORBBEC
+
     return true;
 }
 
@@ -517,6 +608,19 @@ void VideoInput::stop_camera(bool force)
         std::cerr << "Error: " << Zivid::toString(e) << std::endl;
     }
 #endif // USE_ZIVID
+// Orbbec Support: Stop the Orbbec camera acquisition, tear it down
+#ifdef USE_ORBBEC
+    try
+    {
+        orbbec_pipeline.stop();
+        orbbec_initialized = false;
+    }
+    catch (ob::Error& e)
+    {
+        std::cerr << "ORBBEC ERROR -> function:" << e.getName() << "\nargs:" << e.getArgs() << "\nmessage:" << e.getMessage() << "\ntype:" << e.getExceptionType() << std::endl;
+    }
+#endif // USE_ORBBEC
+
 
     if (_video_capture)
     {
@@ -944,6 +1048,25 @@ QStringList VideoInput::list_devices_zivid()
 
 #endif // USE_ZIVID
 
+// Orbbec Support: Configure Orbbec camera and allow it to show up in the list
+#ifdef USE_ORBBEC
+void VideoInput::configure_orbbec_camera(int index, bool silent)
+{
+    if (orbbec_initialized)
+    {
+        std::cout << "Orbbec initialised." << std::endl;
+    }
+}
+
+QStringList VideoInput::list_devices_orbbec()
+{
+    QStringList list;
+    list += "Orbbec Astra 2 RGB Camera";
+    return list;
+}
+#endif // USE_ORBBEC
+
+
 void VideoInput::waitForStart(void)
 {
     while (isRunning() && !_init)
@@ -999,6 +1122,9 @@ QStringList VideoInput::list_devices(void)
 #ifdef USE_ZIVID
     list += list_devices_zivid();
 #endif
+#ifdef USE_ORBBEC
+    list += list_devices_orbbec();
+#endif // USE_ORBBEC
 
     return list;
 }

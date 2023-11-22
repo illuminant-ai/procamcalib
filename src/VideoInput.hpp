@@ -50,6 +50,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "Zivid/Zivid.h"
 #endif // USE_ZIVID
 
+// Orbbec Support: Add OrbbecSDK Header Files
+#ifdef USE_ORBBEC
+#include "libobsensor/ObSensor.hpp"
+#include "libobsensor/hpp/Error.hpp"
+#endif // USE_ORBBEC
+
 
 class VideoInput : public QThread
 {
@@ -90,6 +96,13 @@ public:
     inline bool is_zivid_camera(void) const { return _camera_name != "" && _camera_name.rfind("Zivid", 0) == 0; }
     QStringList list_devices_zivid();
 #endif
+#ifdef USE_ORBBEC
+    inline void set_camera_name(std::string name) { _camera_name = name; }
+    inline std::string get_camera_name(void) const { return _camera_name; }
+    inline bool is_orbbec_camera(void) const { return _camera_name != "" && _camera_name.rfind("Orbbec Astra2", 0) == 0; }
+    QStringList list_devices_orbbec();
+#endif // USE_ORBBEC
+
     void setImageSize(size_t width, size_t height);
 
     QStringList list_devices(void);
@@ -131,6 +144,11 @@ private:
 #ifdef USE_ZIVID
     void configure_zivid_camera(int index, bool silent);
 #endif
+// Orbbec Support: Add Orbbec private methods
+#ifdef USE_ORBBEC
+    void configure_orbbec_camera(int index, bool silent);
+#endif // USE_ORBBEC
+
 
 
 public:
@@ -156,6 +174,15 @@ private:
     bool zivid_initialized = false;
     Zivid::Settings2D settings;
 #endif // USE_ZIVID
+// Orbbec Support: Add Zivid private members
+#ifdef USE_ORBBEC
+    std::string _camera_name;
+    bool orbbec_initialized = false;
+    ob::Pipeline orbbec_pipeline;
+    std::shared_ptr<ob::Config> orbbec_config;
+    std::shared_ptr<ob::StreamProfile> color_profile;
+#endif // USE_ORBBEC
+
 
     std::shared_ptr<cv::VideoCapture> _video_capture;
     volatile bool _init;

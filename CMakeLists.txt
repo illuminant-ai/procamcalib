@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.18.0)
 option(WITH_SPINNAKER "Use the Spinnaker SDK for increased camera support" OFF)
 option(WITH_PHOTONEO "Use the Photoneo API for increased camera support" OFF)
 option(WITH_ZIVID "Use the Zivid API for increased camera support" OFF)
+option(WITH_ORBBEC "Use the Orbbec SDK for increased camera support" OFF)
 
 set(OpenGL_GL_PREFERENCE "GLVND")
 
@@ -16,7 +17,7 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOUIC_SEARCH_PATHS forms)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
-
+list(APPEND CMAKE_PREFIX_PATH "C:/Qt/5.15.2/msvc2019_64")
 set(OpenCV_DIR "C:/dev/opencv-4.7.0/install")
 find_package(OpenCV COMPONENTS core imgproc highgui calib3d features2d flann REQUIRED)
 find_package(OpenGL REQUIRED)
@@ -108,6 +109,18 @@ if(WITH_ZIVID)
     target_link_libraries(${PROJECT_NAME} PRIVATE  Zivid::Core)
     target_compile_definitions(${PROJECT_NAME} PRIVATE _USE_MATH_DEFINES USE_ZIVID)
     MESSAGE(STATUS "Building with the Zivid API")
+endif()
+
+# Orbbec Support
+if(WITH_ORBBEC)
+    # use orbbec package
+    set(OrbbecSDK_ROOT_DIR "C:/dev/OrbbecSDK_v1.8.1/SDK")
+    set(OrbbecSDK_LIBRARY_DIRS "${OrbbecSDK_ROOT_DIR}/lib/OrbbecSDK.lib")
+    set(OrbbecSDK_INCLUDE_DIR "${OrbbecSDK_ROOT_DIR}/include")
+    include_directories(${PROJECT_NAME} ${OrbbecSDK_INCLUDE_DIR})
+    target_link_libraries(${PROJECT_NAME} PRIVATE  ${OrbbecSDK_LIBRARY_DIRS})
+    target_compile_definitions(${PROJECT_NAME} PRIVATE USE_ORBBEC)
+    MESSAGE(STATUS "Building with the Orbbec SDK")
 endif()
 
 if(WIN32)
